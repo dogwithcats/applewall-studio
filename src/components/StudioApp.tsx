@@ -35,13 +35,17 @@ import {
   type IPhoneTier,
 } from "@/lib/devices";
 import { STYLE_PRESETS, getPresetById, type ScenarioType } from "@/lib/presets";
-import { SAMPLE_PHOTOS, generateSampleDataUrl } from "@/lib/samples";
+import { SAMPLE_PHOTOS, getSampleImageUrl } from "@/lib/samples";
 import {
   exportDeviceWallpaper,
   exportShowcasePoster,
   type WallpaperRenderOptions,
 } from "@/lib/canvas-engine";
-import { DevicePreview, type ClockFontStyle } from "./DevicePreview";
+import {
+  DevicePreview,
+  type ChassisFinish,
+  type ClockFontStyle,
+} from "./DevicePreview";
 import { SuitePreview } from "./SuitePreview";
 import { FeedbackModal } from "./FeedbackModal";
 import { InspirationStrip } from "./InspirationStrip";
@@ -53,6 +57,13 @@ const CLOCK_COLORS = [
   { label: "冰蓝", value: "#bae6fd" },
   { label: "樱粉", value: "#fbcfe8" },
   { label: "星曜黑", value: "#18181b" },
+];
+
+const CHASSIS_FINISHES: { id: ChassisFinish; label: string; color: string }[] = [
+  { id: "natural", label: "原色钛", color: "#9a968e" },
+  { id: "desert", label: "沙漠金", color: "#cfa987" },
+  { id: "black", label: "暗夜黑", color: "#2b2d34" },
+  { id: "silver", label: "星光银", color: "#d7dae2" },
 ];
 
 export function StudioApp() {
@@ -67,7 +78,7 @@ export function StudioApp() {
   // === 2. 双核心场景 & 美化预设 ===
   const [scenario, setScenario] = useState<ScenarioType>("portrait_pet");
   const [presetId, setPresetId] = useState<string>("portrait-studio-light");
-  const [strength, setStrength] = useState<number>(0.45);
+  const [strength, setStrength] = useState<number>(0.42);
   const [customPrompt, setCustomPrompt] = useState<string>("");
 
   // === 3. 苹果设备与视图模式 ===
@@ -75,16 +86,17 @@ export function StudioApp() {
   const [deviceFamily, setDeviceFamily] = useState<DeviceFamily>("iphone");
   const [deviceId, setDeviceId] = useState<string>("iphone-18-pro-max");
   const [ipadLandscape, setIpadLandscape] = useState<boolean>(false);
+  const [chassisFinish, setChassisFinish] = useState<ChassisFinish>("natural");
 
   // === 4. 构图、安全区与锁屏微调 ===
-  const [zoom, setZoom] = useState<number>(1.05);
+  const [zoom, setZoom] = useState<number>(1.04);
   const [offsetX, setOffsetX] = useState<number>(0);
   const [offsetY, setOffsetY] = useState<number>(0);
-  const [topBreathingRoom, setTopBreathingRoom] = useState<number>(0.16);
-  const [clockScrim, setClockScrim] = useState<number>(0.22);
+  const [topBreathingRoom, setTopBreathingRoom] = useState<number>(0.12);
+  const [clockScrim, setClockScrim] = useState<number>(0.18);
   const [homeScreenBlur, setHomeScreenBlur] = useState<boolean>(false);
   const [showSafeZones, setShowSafeZones] = useState<boolean>(false);
-  const [showOriginal, setShowOriginal] = useState<boolean>(false);
+  const [compareMode, setCompareMode] = useState<boolean>(false);
   const [depthHint, setDepthHint] = useState<boolean>(true);
   const [clockFont, setClockFont] = useState<ClockFontStyle>("sf-bold");
   const [clockColor, setClockColor] = useState<string>("#ffffff");
@@ -126,7 +138,7 @@ export function StudioApp() {
 
   // 初始化默认演示照片 + 查询后端 AI 引擎状态
   useEffect(() => {
-    const sampleUrl = generateSampleDataUrl(SAMPLE_PHOTOS[0].id);
+    const sampleUrl = getSampleImageUrl(SAMPLE_PHOTOS[0].id);
     setSourceDataUrl(sampleUrl);
     setActiveImageUrl(sampleUrl);
 
@@ -145,14 +157,13 @@ export function StudioApp() {
     img.src = activeImageUrl;
   }, [activeImageUrl]);
 
-  // 切换设备大类时自动选中该大类首款机型
   function handleSwitchFamily(family: DeviceFamily) {
     setDeviceFamily(family);
     setViewMode("single");
     const first = APPLE_DEVICES.find((d) => d.family === family);
     if (first) setDeviceId(first.id);
     if (family === "mac") {
-      setTopBreathingRoom((v) => Math.min(v, 0.06));
+      setTopBreathingRoom((v) => Math.min(v, 0.04));
       setHomeScreenBlur(false);
     }
   }
@@ -164,17 +175,17 @@ export function StudioApp() {
     if (deviceFamily === "iphone" && p.localRecipe.recommendedTopBreathing !== undefined) {
       setTopBreathingRoom(p.localRecipe.recommendedTopBreathing);
     }
-    setShowOriginal(false);
+    setCompareMode(false);
   }
 
   function handleSelectSample(sampleId: string) {
     const meta = SAMPLE_PHOTOS.find((s) => s.id === sampleId);
-    const dataUrl = generateSampleDataUrl(sampleId);
+    const url = getSampleImageUrl(sampleId);
     setActiveSampleId(sampleId);
-    setSourceDataUrl(dataUrl);
-    setActiveImageUrl(dataUrl);
+    setSourceDataUrl(url);
+    setActiveImageUrl(url);
     setLastResult(null);
-    setZoom(1.05);
+    setZoom(1.04);
     setOffsetX(0);
     setOffsetY(0);
     if (meta) {
@@ -199,7 +210,7 @@ export function StudioApp() {
       setZoom(1.02);
       setOffsetX(0);
       setOffsetY(0);
-      showToast("照片已加载！点击左侧「AI 美化适配」或直接微调导出");
+      showToast("照片已加载！可在真机屏幕内直接拖动调整构图");
     };
     reader.readAsDataURL(file);
   }
@@ -210,7 +221,7 @@ export function StudioApp() {
       return;
     }
     setGenerating(true);
-    setShowOriginal(false);
+    setCompareMode(false);
     try {
       const dims = getEffectiveDimensions(device, ipadLandscape);
       const resp = await fetch("/api/generate", {
@@ -283,21 +294,21 @@ export function StudioApp() {
       bypassStyle: false,
     });
     showToast(
-      `已导出 ${device.name} ${asHomeScreen ? "主屏柔焦配对" : "高清原生"} PNG 壁纸！欢迎右上角提建议`
+      `已导出 ${device.name} ${asHomeScreen ? "主屏柔焦配对" : "高清原生"} PNG 壁纸！`
     );
   }
 
   function handleExportPoster() {
     if (!loadedImage) return;
     exportShowcasePoster(loadedImage, { ...renderOptions, bypassStyle: false });
-    showToast("已生成小红书/朋友圈高颜值晒图海报！");
+    showToast("已生成小红书/朋友圈高颜值带壳晒图海报！");
   }
 
   function handleApplyRemix(targetPresetId: string, targetScenario: ScenarioType, sampleId: string) {
     setScenario(targetScenario);
     handleSelectPreset(targetPresetId);
     if (!sourceDataUrl || activeSampleId) {
-      const url = generateSampleDataUrl(sampleId);
+      const url = getSampleImageUrl(sampleId);
       setActiveSampleId(sampleId);
       setSourceDataUrl(url);
       setActiveImageUrl(url);
@@ -307,23 +318,23 @@ export function StudioApp() {
   }
 
   return (
-    <div className="min-h-screen bg-[#07080d] text-zinc-100">
-      {/* 顶部氛围极光背景 */}
-      <div className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[420px] bg-[radial-gradient(ellipse_at_top,rgba(59,130,246,0.16),transparent_65%)]" />
+    <div className="min-h-screen bg-[#06070b] text-zinc-100">
+      {/* 顶部微光氛围背景 */}
+      <div className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[440px] bg-[radial-gradient(ellipse_at_top,rgba(59,130,246,0.12),transparent_65%)]" />
 
       {/* ==================== 顶部导航栏 ==================== */}
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#07080d]/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3 px-4 py-3 sm:px-6">
+      <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#06070b]/75 backdrop-blur-2xl">
+        <div className="mx-auto flex max-w-[1460px] items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-base font-bold text-white shadow-lg shadow-blue-500/25">
+            <div className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-gradient-to-b from-zinc-100 to-zinc-300 text-base font-bold text-black shadow-[0_6px_18px_rgba(255,255,255,0.16)]">
               
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-base font-semibold tracking-tight text-white">
+                <span className="text-[15px] font-semibold tracking-tight text-white">
                   果壁 Studio
                 </span>
-                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+                <span className="rounded-full border border-emerald-400/25 bg-emerald-500/12 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
                   完全免费 · 共创测试版
                 </span>
               </div>
@@ -333,26 +344,25 @@ export function StudioApp() {
             </div>
           </div>
 
-          {/* 视图模式快速切换 */}
-          <div className="hidden items-center rounded-xl border border-white/10 bg-white/[0.04] p-1 md:flex">
+          <div className="hidden items-center rounded-full border border-white/[0.09] bg-white/[0.03] p-1 md:flex">
             <button
               type="button"
               onClick={() => setViewMode("single")}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+              className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition ${
                 viewMode === "single"
                   ? "bg-white text-black shadow"
-                  : "text-zinc-300 hover:text-white"
+                  : "text-zinc-400 hover:text-white"
               }`}
             >
-              单设备精调预览
+              单设备精调
             </button>
             <button
               type="button"
               onClick={() => setViewMode("suite")}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+              className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition ${
                 viewMode === "suite"
                   ? "bg-white text-black shadow"
-                  : "text-zinc-300 hover:text-white"
+                  : "text-zinc-400 hover:text-white"
               }`}
             >
               <Layers className="h-3.5 w-3.5" />
@@ -361,21 +371,21 @@ export function StudioApp() {
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="hidden items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] text-zinc-300 lg:flex">
+            <div className="hidden items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[11px] text-zinc-300 lg:flex">
               <Cpu className="h-3.5 w-3.5 text-blue-400" />
               <span>
                 {aiMeta?.isCloudConfigured
                   ? `云端 AI (${aiMeta.provider}) · 今日剩余 ${aiMeta.remainingToday} 次`
-                  : "本地即时引擎已就绪（0成本无限用）"}
+                  : "本地即时引擎就绪（无限免费）"}
               </span>
             </div>
 
             <button
               type="button"
               onClick={() => setFeedbackOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl border border-blue-400/30 bg-blue-500/15 px-3 py-1.5 text-xs font-medium text-blue-200 transition hover:bg-blue-500/25"
+              className="flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-3.5 py-1.5 text-xs font-medium text-zinc-100 transition hover:bg-white/[0.12]"
             >
-              <MessageSquareHeart className="h-3.5 w-3.5" />
+              <MessageSquareHeart className="h-3.5 w-3.5 text-blue-400" />
               <span>提建议</span>
             </button>
           </div>
@@ -383,18 +393,18 @@ export function StudioApp() {
       </header>
 
       {/* ==================== 主三栏工作台 ==================== */}
-      <main className="mx-auto max-w-[1440px] px-4 py-5 sm:px-6">
+      <main className="mx-auto max-w-[1460px] px-4 py-5 sm:px-6">
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
           {/* ---------- 左侧栏：上传照片 + 双场景美化控制 ---------- */}
           <aside className="space-y-4 lg:col-span-3">
             {/* 1. 照片上传区 */}
-            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-md">
+            <div className="glass-panel rounded-[26px] p-4">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="flex items-center gap-1.5 text-sm font-semibold text-white">
+                <h2 className="flex items-center gap-1.5 text-[13px] font-semibold text-white">
                   <ImageIcon className="h-4 w-4 text-blue-400" />
                   1. 上传你的照片
                 </h2>
-                <span className="text-[11px] text-zinc-500">支持人像/萌宠/风景</span>
+                <span className="text-[11px] text-zinc-500">本地直传护隐私</span>
               </div>
 
               <div
@@ -409,15 +419,17 @@ export function StudioApp() {
                   handleFileUpload(e.dataTransfer.files?.[0]);
                 }}
                 onClick={() => fileInputRef.current?.click()}
-                className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-4 py-5 text-center transition ${
+                className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-4 py-4 text-center transition ${
                   isDragging
                     ? "border-blue-400 bg-blue-500/15"
-                    : "border-white/15 bg-white/[0.02] hover:border-white/30 hover:bg-white/[0.05]"
+                    : "border-white/15 bg-black/25 hover:border-white/30 hover:bg-white/[0.04]"
                 }`}
               >
-                <Upload className="mb-2 h-5 w-5 text-zinc-300" />
-                <p className="text-xs font-medium text-zinc-200">点击上传或拖拽照片到这里</p>
-                <p className="mt-1 text-[11px] text-zinc-500">本地直传预览，隐私不留存</p>
+                <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.06]">
+                  <Upload className="h-4 w-4 text-zinc-200" />
+                </div>
+                <p className="text-xs font-medium text-zinc-200">点击或拖拽照片到这里</p>
+                <p className="mt-0.5 text-[10.5px] text-zinc-500">支持人像 / 萌宠 / 风景原图</p>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -427,38 +439,50 @@ export function StudioApp() {
                 />
               </div>
 
-              {/* 内置快速演示样图 */}
-              <div className="mt-3">
-                <p className="mb-1.5 text-[11px] text-zinc-400">手头没图？点下面示例图立即体验：</p>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {SAMPLE_PHOTOS.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => handleSelectSample(s.id)}
-                      className={`rounded-xl border px-2 py-1.5 text-left transition ${
-                        activeSampleId === s.id
-                          ? "border-blue-500/70 bg-blue-500/15 text-white"
-                          : "border-white/10 bg-white/[0.02] text-zinc-400 hover:border-white/20 hover:text-zinc-200"
-                      }`}
-                    >
-                      <div className="truncate text-[11px] font-medium">{s.title}</div>
-                      <div className="truncate text-[9px] opacity-70">{s.tag}</div>
-                    </button>
-                  ))}
+              {/* 带真实缩略图的内置高清样图 */}
+              <div className="mt-3.5">
+                <p className="mb-2 text-[11px] text-zinc-400">内置高清样图一键试玩：</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {SAMPLE_PHOTOS.map((s) => {
+                    const selected = activeSampleId === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => handleSelectSample(s.id)}
+                        className={`group overflow-hidden rounded-xl border text-left transition ${
+                          selected
+                            ? "border-white/60 ring-2 ring-blue-500/40"
+                            : "border-white/10 opacity-80 hover:border-white/25 hover:opacity-100"
+                        }`}
+                      >
+                        <div className="relative aspect-[4/3] w-full overflow-hidden bg-zinc-900">
+                          <img
+                            src={s.imagePath}
+                            alt={s.title}
+                            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                          />
+                        </div>
+                        <div className="bg-black/50 px-1.5 py-1">
+                          <div className="truncate text-[10px] font-medium text-zinc-100">
+                            {s.title}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
 
             {/* 2. 双核心场景 + 风格预设 */}
-            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-md">
-              <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-white">
-                <Sparkles className="h-4 w-4 text-amber-400" />
-                2. 选择场景与 AI 美化风格
+            <div className="glass-panel rounded-[26px] p-4">
+              <h2 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold text-white">
+                <Sparkles className="h-4 w-4 text-amber-300" />
+                2. 场景与 AI 美化风格
               </h2>
 
-              {/* 双场景切换 */}
-              <div className="mb-3 grid grid-cols-2 gap-1.5 rounded-xl border border-white/10 bg-black/40 p-1">
+              <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl border border-white/[0.08] bg-black/45 p-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -466,7 +490,7 @@ export function StudioApp() {
                     const first = STYLE_PRESETS.find((p) => p.scenario === "portrait_pet");
                     if (first) handleSelectPreset(first.id);
                   }}
-                  className={`rounded-lg py-2 text-xs font-medium transition ${
+                  className={`rounded-lg py-1.5 text-xs font-medium transition ${
                     scenario === "portrait_pet"
                       ? "bg-white text-black shadow"
                       : "text-zinc-400 hover:text-white"
@@ -481,7 +505,7 @@ export function StudioApp() {
                     const first = STYLE_PRESETS.find((p) => p.scenario === "scenery_art");
                     if (first) handleSelectPreset(first.id);
                   }}
-                  className={`rounded-lg py-2 text-xs font-medium transition ${
+                  className={`rounded-lg py-1.5 text-xs font-medium transition ${
                     scenario === "scenery_art"
                       ? "bg-white text-black shadow"
                       : "text-zinc-400 hover:text-white"
@@ -491,14 +515,7 @@ export function StudioApp() {
                 </button>
               </div>
 
-              <p className="mb-3 text-[11px] leading-relaxed text-zinc-400">
-                {scenario === "portrait_pet"
-                  ? "保真模式：低重绘强度锁定五官与宠物毛发，重点优化影棚光影、景深与锁屏留白。"
-                  : "二创模式：保留原图构图骨架，大胆重塑色彩笔触与苹果级光影氛围。"}
-              </p>
-
-              {/* 风格卡片列表 */}
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {filteredPresets.map((item) => {
                   const selected = item.id === presetId;
                   return (
@@ -506,10 +523,10 @@ export function StudioApp() {
                       key={item.id}
                       type="button"
                       onClick={() => handleSelectPreset(item.id)}
-                      className={`w-full rounded-2xl border p-3 text-left transition ${
+                      className={`w-full rounded-2xl border p-2.5 text-left transition ${
                         selected
-                          ? "border-blue-500/80 bg-blue-500/12 shadow-[0_0_24px_rgba(59,130,246,0.12)]"
-                          : "border-white/8 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.05]"
+                          ? "border-blue-400/60 bg-blue-500/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
+                          : "border-white/[0.06] bg-white/[0.015] hover:border-white/15 hover:bg-white/[0.04]"
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -523,12 +540,12 @@ export function StudioApp() {
                           <span className="text-xs font-semibold text-white">{item.name}</span>
                         </div>
                         {item.badge && (
-                          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-zinc-200">
+                          <span className="rounded-full bg-white/[0.08] px-2 py-0.5 text-[9.5px] text-zinc-300">
                             {item.badge}
                           </span>
                         )}
                       </div>
-                      <p className="mt-1.5 text-[11px] leading-snug text-zinc-400">
+                      <p className="mt-1 text-[10.5px] leading-snug text-zinc-400">
                         {item.subtitle}
                       </p>
                     </button>
@@ -537,13 +554,13 @@ export function StudioApp() {
               </div>
 
               {/* 风格强度 & 补充描述 */}
-              <div className="mt-4 space-y-3 border-t border-white/10 pt-3">
+              <div className="mt-4 space-y-3 border-t border-white/[0.08] pt-3.5">
                 <div>
-                  <div className="mb-1 flex items-center justify-between text-[11px]">
+                  <div className="mb-1.5 flex items-center justify-between text-[11px]">
                     <span className="text-zinc-300">
                       {scenario === "portrait_pet" ? "美化幅度（越低越保真）" : "艺术重绘强度"}
                     </span>
-                    <span className="font-mono text-blue-300">{Math.round(strength * 100)}%</span>
+                    <span className="font-mono text-zinc-200">{Math.round(strength * 100)}%</span>
                   </div>
                   <input
                     type="range"
@@ -557,24 +574,20 @@ export function StudioApp() {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-[11px] text-zinc-400">
-                    自定义补充描述（选填，用于云端 AI）
-                  </label>
                   <input
                     type="text"
                     value={customPrompt}
                     onChange={(e) => setCustomPrompt(e.target.value)}
                     placeholder={
                       scenario === "portrait_pet"
-                        ? "如：去除背景路人，天空变成柔和粉蓝晚霞"
-                        : "如：增加微弱流星雨和柔和丁达尔光柱"
+                        ? "选填补充：如去除背景路人、柔化暖光"
+                        : "选填补充：如增加星芒、柔和粉蓝晚霞"
                     }
-                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs text-white placeholder:text-zinc-500 focus:border-blue-500/60 focus:outline-none"
+                    className="w-full rounded-xl border border-white/[0.09] bg-black/40 px-3 py-2 text-xs text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus:outline-none"
                   />
                 </div>
 
-                {/* 可选 BYOK 折叠区 */}
-                <div className="rounded-xl border border-white/8 bg-black/30 px-3 py-2">
+                <div className="rounded-xl border border-white/[0.07] bg-black/30 px-3 py-2">
                   <button
                     type="button"
                     onClick={() => setShowByok((v) => !v)}
@@ -584,7 +597,11 @@ export function StudioApp() {
                       <KeyRound className="h-3.5 w-3.5" />
                       接入国内云端大模型 Key（选填）
                     </span>
-                    {showByok ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                    {showByok ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
                   </button>
                   {showByok && (
                     <div className="mt-2.5 space-y-2">
@@ -611,7 +628,7 @@ export function StudioApp() {
                   type="button"
                   onClick={handleGenerateAI}
                   disabled={generating || !sourceDataUrl}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition hover:brightness-110 disabled:opacity-50"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 via-blue-500 to-indigo-500 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(59,130,246,0.32)] transition hover:brightness-110 disabled:opacity-50"
                 >
                   <Wand2 className={`h-4 w-4 ${generating ? "animate-spin" : ""}`} />
                   {generating ? "AI 正在美化与适配..." : "一键 AI 美化适配"}
@@ -620,11 +637,11 @@ export function StudioApp() {
             </div>
           </aside>
 
-          {/* ---------- 中央舞台：苹果设备切换与真机预览 ---------- */}
-          <section className="flex flex-col rounded-3xl border border-white/10 bg-white/[0.025] p-4 sm:p-6 lg:col-span-6">
-            {/* 顶部设备选择条 */}
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-1.5">
+          {/* ---------- 中央舞台：无嵌套冗余边框的沉浸式苹果真机画廊 ---------- */}
+          <section className="glass-panel studio-stage-bg relative flex flex-col justify-between overflow-hidden rounded-[28px] p-4 sm:p-6 lg:col-span-6">
+            {/* 顶部设备与系列选择栏 */}
+            <div className="relative z-20 mb-4 flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex flex-wrap items-center gap-1 rounded-full border border-white/[0.09] bg-black/45 p-1 backdrop-blur-xl">
                 {(
                   [
                     { id: "iphone", label: "iPhone", icon: Smartphone },
@@ -639,10 +656,8 @@ export function StudioApp() {
                       key={item.id}
                       type="button"
                       onClick={() => handleSwitchFamily(item.id)}
-                      className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition ${
-                        active
-                          ? "bg-white text-black shadow"
-                          : "border border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/[0.09]"
+                      className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition ${
+                        active ? "bg-white text-black shadow" : "text-zinc-400 hover:text-white"
                       }`}
                     >
                       <Icon className="h-3.5 w-3.5" />
@@ -650,22 +665,21 @@ export function StudioApp() {
                     </button>
                   );
                 })}
-
                 <button
                   type="button"
                   onClick={() => setViewMode("suite")}
-                  className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition ${
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition ${
                     viewMode === "suite"
                       ? "bg-blue-500 text-white shadow"
-                      : "border border-blue-500/30 bg-blue-500/10 text-blue-200 hover:bg-blue-500/20"
+                      : "text-blue-300 hover:text-blue-200"
                   }`}
                 >
                   <Layers className="h-3.5 w-3.5" />
-                  全家桶三端
+                  全家桶
                 </button>
               </div>
 
-              {/* 具体型号子选择：iPhone 支持按代数 + 基础版/Pro/Pro Max 快速区分 */}
+              {/* iPhone 系列 + 基础版/Pro/Pro Max 快速分段区分 */}
               {viewMode === "single" && deviceFamily === "iphone" && (
                 <div className="flex flex-wrap items-center gap-2">
                   <select
@@ -675,25 +689,25 @@ export function StudioApp() {
                       const target = findIPhoneDevice(nextSeries, device.tier || "pro-max");
                       setDeviceId(target.id);
                     }}
-                    className="rounded-xl border border-white/12 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-100 focus:border-blue-500 focus:outline-none"
+                    className="rounded-full border border-white/12 bg-black/55 px-3 py-1.5 text-xs font-medium text-zinc-100 backdrop-blur-xl focus:border-blue-400 focus:outline-none"
                   >
                     {IPHONE_SERIES_LIST.map((s) => (
-                      <option key={s.id} value={s.id}>
+                      <option key={s.id} value={s.id} className="bg-zinc-950">
                         {s.label}
                       </option>
                     ))}
                   </select>
 
-                  <div className="flex items-center rounded-xl border border-white/12 bg-black/40 p-0.5">
+                  <div className="flex items-center rounded-full border border-white/10 bg-black/50 p-0.5 backdrop-blur-xl">
                     {IPHONE_TIER_LIST.map((t) => {
                       const active = (device.tier || "pro-max") === t.id;
                       const tierStyle =
                         active && t.id === "pro-max"
-                          ? "bg-amber-400 text-black font-semibold shadow"
+                          ? "bg-amber-300 text-black font-semibold shadow"
                           : active && t.id === "pro"
                             ? "bg-blue-500 text-white font-semibold shadow"
                             : active
-                              ? "bg-emerald-400 text-black font-semibold shadow"
+                              ? "bg-emerald-300 text-black font-semibold shadow"
                               : "text-zinc-400 hover:text-zinc-100";
                       return (
                         <button
@@ -706,7 +720,7 @@ export function StudioApp() {
                             );
                             setDeviceId(target.id);
                           }}
-                          className={`rounded-lg px-2.5 py-1 text-[11px] transition ${tierStyle}`}
+                          className={`rounded-full px-2.5 py-1 text-[11px] transition ${tierStyle}`}
                         >
                           {t.label}
                         </button>
@@ -721,10 +735,10 @@ export function StudioApp() {
                   <select
                     value={deviceId}
                     onChange={(e) => setDeviceId(e.target.value)}
-                    className="rounded-xl border border-white/12 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-100 focus:border-blue-500 focus:outline-none"
+                    className="rounded-full border border-white/12 bg-black/55 px-3 py-1.5 text-xs text-zinc-100 backdrop-blur-xl focus:border-blue-400 focus:outline-none"
                   >
                     {familyDevices.map((d) => (
-                      <option key={d.id} value={d.id}>
+                      <option key={d.id} value={d.id} className="bg-zinc-950">
                         {d.name} ({d.width}×{d.height})
                       </option>
                     ))}
@@ -734,8 +748,7 @@ export function StudioApp() {
                     <button
                       type="button"
                       onClick={() => setIpadLandscape((v) => !v)}
-                      className="flex items-center gap-1 rounded-xl border border-white/12 bg-white/[0.05] px-2.5 py-1.5 text-xs text-zinc-200 hover:bg-white/[0.1]"
-                      title="切换 iPad 横竖屏"
+                      className="flex items-center gap-1 rounded-full border border-white/12 bg-black/50 px-3 py-1.5 text-xs text-zinc-200 backdrop-blur-xl hover:bg-white/10"
                     >
                       <RotateCw className="h-3.5 w-3.5" />
                       {ipadLandscape ? "横屏" : "竖屏"}
@@ -745,18 +758,23 @@ export function StudioApp() {
               )}
             </div>
 
-            {/* 核心预览画布舞台 */}
-            <div className="relative flex flex-1 flex-col items-center justify-center rounded-2xl border border-white/6 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.045),transparent_70%)] px-3 py-6">
+            {/* 核心预览画布（干净开放，无冗余内边框） */}
+            <div className="flex flex-1 items-center justify-center py-2">
               {viewMode === "single" ? (
                 <DevicePreview
                   image={loadedImage}
                   device={device}
                   renderOptions={renderOptions}
                   showSafeZones={showSafeZones}
-                  showOriginal={showOriginal}
+                  compareMode={compareMode}
                   clockFont={clockFont}
                   clockColor={clockColor}
                   depthHint={depthHint}
+                  chassisFinish={chassisFinish}
+                  onPanChange={(nx, ny) => {
+                    setOffsetX(nx);
+                    setOffsetY(ny);
+                  }}
                 />
               ) : (
                 <SuitePreview
@@ -767,17 +785,17 @@ export function StudioApp() {
               )}
             </div>
 
-            {/* 舞台底部快捷开关条 */}
+            {/* 底部悬浮玻璃工具 Dock */}
             {viewMode === "single" && (
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="relative z-20 mt-4 flex flex-wrap items-center justify-between gap-2.5 border-t border-white/[0.07] pt-3.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => setShowSafeZones((v) => !v)}
-                    className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs transition ${
+                    className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition ${
                       showSafeZones
-                        ? "border-amber-400/60 bg-amber-500/15 text-amber-200"
-                        : "border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08]"
+                        ? "border-amber-300/50 bg-amber-400/15 text-amber-200"
+                        : "border-white/10 bg-black/40 text-zinc-300 hover:bg-white/[0.08]"
                     }`}
                   >
                     <Eye className="h-3.5 w-3.5" />
@@ -788,71 +806,79 @@ export function StudioApp() {
                     <button
                       type="button"
                       onClick={() => setHomeScreenBlur((v) => !v)}
-                      className={`rounded-xl border px-3 py-1.5 text-xs transition ${
+                      className={`rounded-full border px-3 py-1.5 text-xs transition ${
                         homeScreenBlur
-                          ? "border-purple-400/60 bg-purple-500/15 text-purple-200"
-                          : "border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08]"
+                          ? "border-purple-400/50 bg-purple-500/15 text-purple-200"
+                          : "border-white/10 bg-black/40 text-zinc-300 hover:bg-white/[0.08]"
                       }`}
                     >
-                      {homeScreenBlur ? "当前：主屏配对模糊" : "切换主屏图标预览"}
+                      {homeScreenBlur ? "主屏柔焦模式" : "主屏图标预览"}
                     </button>
                   )}
 
                   <button
                     type="button"
-                    onMouseDown={() => setShowOriginal(true)}
-                    onMouseUp={() => setShowOriginal(false)}
-                    onMouseLeave={() => setShowOriginal(false)}
-                    onClick={() => setShowOriginal((v) => !v)}
-                    className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs transition ${
-                      showOriginal
-                        ? "border-white/50 bg-white/20 text-white"
-                        : "border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08]"
+                    onClick={() => setCompareMode((v) => !v)}
+                    className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition ${
+                      compareMode
+                        ? "border-blue-400/60 bg-blue-500/20 text-blue-100"
+                        : "border-white/10 bg-black/40 text-zinc-300 hover:bg-white/[0.08]"
                     }`}
                   >
                     <SplitSquareHorizontal className="h-3.5 w-3.5" />
-                    {showOriginal ? "显示美化后" : "对比原图"}
+                    {compareMode ? "退出分屏对比" : "滑动对比原图"}
                   </button>
                 </div>
 
-                {lastResult && (
-                  <span className="text-[11px] text-emerald-300/90">
-                    ✓ {lastResult.providerLabel}
-                  </span>
-                )}
+                {/* 钛金属机身配色切换 */}
+                <div className="flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-black/40 px-2.5 py-1">
+                  <span className="text-[10px] text-zinc-400">机身</span>
+                  {CHASSIS_FINISHES.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setChassisFinish(f.id)}
+                      title={f.label}
+                      className={`h-4 w-4 rounded-full border transition ${
+                        chassisFinish === f.id
+                          ? "scale-110 border-white ring-2 ring-white/30"
+                          : "border-white/25 opacity-75 hover:opacity-100"
+                      }`}
+                      style={{ backgroundColor: f.color }}
+                    />
+                  ))}
+                </div>
               </div>
             )}
 
-            {/* 显示 AI 生成提示与 Prompt 透明预览 */}
             {lastResult && (
-              <div className="mt-3 rounded-2xl border border-white/10 bg-black/35 px-3.5 py-2.5 text-[11px] text-zinc-400">
-                <p className="text-zinc-200">{lastResult.tips}</p>
-                <p className="mt-1 line-clamp-2 opacity-75">
-                  已组装美学指令：{lastResult.finalPrompt}
-                </p>
+              <div className="relative z-20 mt-3 rounded-2xl border border-white/[0.08] bg-black/45 px-3.5 py-2.5 text-[11px] text-zinc-400 backdrop-blur">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-zinc-200">{lastResult.tips}</span>
+                  <span className="shrink-0 text-emerald-300">✓ {lastResult.providerLabel}</span>
+                </div>
               </div>
             )}
           </section>
 
           {/* ---------- 右侧栏：苹果专属构图微调 + 无损导出 ---------- */}
           <aside className="space-y-4 lg:col-span-3">
-            {/* 1. 构图与安全区微调 */}
-            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-md">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="flex items-center gap-1.5 text-sm font-semibold text-white">
+            <div className="glass-panel rounded-[26px] p-4">
+              <div className="mb-3.5 flex items-center justify-between">
+                <h2 className="flex items-center gap-1.5 text-[13px] font-semibold text-white">
                   <SlidersHorizontal className="h-4 w-4 text-sky-400" />
-                  3. 苹果构图与安全区微调
+                  3. 构图与安全区精调
                 </h2>
                 <button
                   type="button"
                   onClick={() => {
-                    setZoom(1.05);
+                    setZoom(1.04);
                     setOffsetX(0);
                     setOffsetY(0);
-                    setTopBreathingRoom(deviceFamily === "mac" ? 0.04 : 0.16);
-                    setClockScrim(0.22);
+                    setTopBreathingRoom(deviceFamily === "mac" ? 0.04 : 0.12);
+                    setClockScrim(0.18);
                   }}
-                  className="text-[11px] text-zinc-400 hover:text-white"
+                  className="text-[11px] text-zinc-400 transition hover:text-white"
                 >
                   重置
                 </button>
@@ -860,9 +886,9 @@ export function StudioApp() {
 
               <div className="space-y-3.5">
                 <div>
-                  <div className="mb-1 flex justify-between text-[11px]">
-                    <span className="text-zinc-300">顶部智能留白扩图（避让时钟）</span>
-                    <span className="font-mono text-sky-300">
+                  <div className="mb-1.5 flex justify-between text-[11px]">
+                    <span className="text-zinc-300">顶部智能留白扩图</span>
+                    <span className="font-mono text-zinc-200">
                       {Math.round(topBreathingRoom * 100)}%
                     </span>
                   </div>
@@ -878,9 +904,9 @@ export function StudioApp() {
                 </div>
 
                 <div>
-                  <div className="mb-1 flex justify-between text-[11px]">
-                    <span className="text-zinc-300">锁屏时间顶部柔暗（防白字看不清）</span>
-                    <span className="font-mono text-sky-300">{Math.round(clockScrim * 100)}%</span>
+                  <div className="mb-1.5 flex justify-between text-[11px]">
+                    <span className="text-zinc-300">锁屏时钟柔暗护眼</span>
+                    <span className="font-mono text-zinc-200">{Math.round(clockScrim * 100)}%</span>
                   </div>
                   <input
                     type="range"
@@ -894,9 +920,9 @@ export function StudioApp() {
                 </div>
 
                 <div>
-                  <div className="mb-1 flex justify-between text-[11px]">
+                  <div className="mb-1.5 flex justify-between text-[11px]">
                     <span className="text-zinc-300">画面缩放</span>
-                    <span className="font-mono text-zinc-300">{Math.round(zoom * 100)}%</span>
+                    <span className="font-mono text-zinc-200">{Math.round(zoom * 100)}%</span>
                   </div>
                   <input
                     type="range"
@@ -942,11 +968,10 @@ export function StudioApp() {
                   </div>
                 </div>
 
-                {/* iOS 锁屏样式模拟 */}
                 {deviceFamily !== "mac" && (
-                  <div className="space-y-2.5 border-t border-white/10 pt-3">
+                  <div className="space-y-2.5 border-t border-white/[0.08] pt-3.5">
                     <div className="flex items-center justify-between text-[11px]">
-                      <span className="text-zinc-300">锁屏时间样式模拟</span>
+                      <span className="text-zinc-300">锁屏时间字体与色彩</span>
                       <label className="flex cursor-pointer items-center gap-1.5 text-zinc-400">
                         <input
                           type="checkbox"
@@ -954,11 +979,11 @@ export function StudioApp() {
                           onChange={(e) => setDepthHint(e.target.checked)}
                           className="rounded"
                         />
-                        景深参考
+                        景深模拟
                       </label>
                     </div>
 
-                    <div className="grid grid-cols-4 gap-1">
+                    <div className="grid grid-cols-4 gap-1 rounded-xl border border-white/[0.08] bg-black/35 p-1">
                       {(
                         [
                           { id: "sf-bold", label: "粗黑" },
@@ -973,8 +998,8 @@ export function StudioApp() {
                           onClick={() => setClockFont(f.id)}
                           className={`rounded-lg py-1 text-[11px] transition ${
                             clockFont === f.id
-                              ? "bg-white text-black font-medium"
-                              : "border border-white/10 bg-white/[0.03] text-zinc-400 hover:text-white"
+                              ? "bg-white font-medium text-black shadow"
+                              : "text-zinc-400 hover:text-white"
                           }`}
                         >
                           {f.label}
@@ -991,8 +1016,8 @@ export function StudioApp() {
                           title={c.label}
                           className={`h-6 w-6 rounded-full border transition ${
                             clockColor === c.value
-                              ? "scale-110 border-blue-400 ring-2 ring-blue-400/50"
-                              : "border-white/25"
+                              ? "scale-110 border-white ring-2 ring-blue-400/50"
+                              : "border-white/25 opacity-80 hover:opacity-100"
                           }`}
                           style={{ backgroundColor: c.value }}
                         />
@@ -1003,9 +1028,8 @@ export function StudioApp() {
               </div>
             </div>
 
-            {/* 2. 导出高清原图 & 晒图海报 */}
-            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-md">
-              <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-white">
+            <div className="glass-panel rounded-[26px] p-4">
+              <h2 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold text-white">
                 <Download className="h-4 w-4 text-emerald-400" />
                 4. 免费无损导出（无水印）
               </h2>
@@ -1015,7 +1039,7 @@ export function StudioApp() {
                   type="button"
                   onClick={() => handleExportCurrent(false)}
                   disabled={!loadedImage}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-white py-3 text-sm font-semibold text-black transition hover:bg-zinc-200 disabled:opacity-40"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-white py-3 text-sm font-semibold text-black shadow-[0_8px_24px_rgba(255,255,255,0.14)] transition hover:bg-zinc-200 disabled:opacity-40"
                 >
                   <Download className="h-4 w-4" />
                   下载 {device.shortName} 原图
@@ -1026,7 +1050,7 @@ export function StudioApp() {
                     type="button"
                     onClick={() => handleExportCurrent(true)}
                     disabled={!loadedImage}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/[0.05] py-2.5 text-xs font-medium text-zinc-100 transition hover:bg-white/[0.1] disabled:opacity-40"
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] py-2.5 text-xs font-medium text-zinc-100 transition hover:bg-white/[0.09] disabled:opacity-40"
                   >
                     <Sparkles className="h-3.5 w-3.5 text-purple-300" />
                     下载配套「主屏柔焦模糊壁纸」
@@ -1036,7 +1060,7 @@ export function StudioApp() {
                 <button
                   type="button"
                   onClick={() => setViewMode("suite")}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-blue-500/30 bg-blue-500/10 py-2.5 text-xs font-medium text-blue-200 transition hover:bg-blue-500/20"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-blue-400/25 bg-blue-500/[0.09] py-2.5 text-xs font-medium text-blue-200 transition hover:bg-blue-500/[0.16]"
                 >
                   <Layers className="h-3.5 w-3.5" />
                   生成 iPhone + iPad + Mac 三端套图
@@ -1046,7 +1070,7 @@ export function StudioApp() {
                   type="button"
                   onClick={handleExportPoster}
                   disabled={!loadedImage}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-amber-400/25 bg-amber-500/10 py-2.5 text-xs font-medium text-amber-200 transition hover:bg-amber-500/20 disabled:opacity-40"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/[0.08] py-2.5 text-xs font-medium text-amber-200 transition hover:bg-amber-500/[0.15] disabled:opacity-40"
                 >
                   <Share2 className="h-3.5 w-3.5" />
                   生成小红书 / 朋友圈带壳晒图海报
@@ -1054,7 +1078,7 @@ export function StudioApp() {
               </div>
 
               <p className="mt-3 text-center text-[11px] leading-relaxed text-zinc-500">
-                完全免费、不加水印。如果你觉得哪里不好用或想要新风格，点右上角「提建议」告诉我们。
+                完全免费、不加水印。点右上角「提建议」即可许愿新风格或新功能。
               </p>
             </div>
           </aside>
@@ -1064,7 +1088,6 @@ export function StudioApp() {
         <InspirationStrip onApplyRemix={handleApplyRemix} />
       </main>
 
-      {/* ==================== 反馈弹窗 ==================== */}
       <FeedbackModal
         open={feedbackOpen}
         onClose={() => setFeedbackOpen(false)}
@@ -1072,9 +1095,8 @@ export function StudioApp() {
         presetContext={preset.name}
       />
 
-      {/* ==================== 底部轻量提示 Toast ==================== */}
       {toast && (
-        <div className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-white/15 bg-zinc-900/95 px-4 py-2.5 text-xs font-medium text-white shadow-2xl backdrop-blur-xl">
+        <div className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/15 bg-zinc-900/95 px-4 py-2 text-xs font-medium text-white shadow-2xl backdrop-blur-xl">
           <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
           <span>{toast}</span>
         </div>
