@@ -11,43 +11,43 @@ interface InspirationStripProps {
 const COMMUNITY_CARDS = [
   {
     id: "remix-1",
-    title: "治愈橘猫 · 影棚通透锁屏",
-    author: "@爱拍猫的小林",
+    title: "午后橘猫 · 富士 Classic Neg 负片",
+    author: "@胶片控小林",
     deviceTag: "iPhone 18 Pro Max",
-    presetId: "portrait-studio-light",
-    scenario: "portrait_pet" as ScenarioType,
+    presetId: "fuji-classic-neg",
+    scenario: "fuji_film" as ScenarioType,
     sampleId: "sample-cat-window",
-    likes: 342,
+    likes: 486,
   },
   {
     id: "remix-2",
-    title: "日照金山 · 新海诚剧场版",
+    title: "日照金山 · 富士 Velvia 鲜艳反转片",
     author: "@川西摄影师阿杰",
     deviceTag: "Mac + iPhone 全家桶",
-    presetId: "art-shinkai-anime",
-    scenario: "scenery_art" as ScenarioType,
+    presetId: "fuji-velvia",
+    scenario: "fuji_film" as ScenarioType,
     sampleId: "sample-alpine-glow",
-    likes: 518,
+    likes: 612,
   },
   {
     id: "remix-3",
-    title: "海边剪影 · 顶部留白避时钟",
-    author: "@极简果粉Momo",
+    title: "海边黄昏 · 太平洋蓝胶片配方",
+    author: "@富士X100V少女",
     deviceTag: "iPhone 锁屏景深",
-    presetId: "portrait-top-breathing",
-    scenario: "portrait_pet" as ScenarioType,
+    presetId: "fuji-pacific-blues",
+    scenario: "fuji_film" as ScenarioType,
     sampleId: "sample-seaside-portrait",
-    likes: 289,
+    likes: 534,
   },
   {
     id: "remix-4",
-    title: "深邃星夜 · OLED 暗黑护眼",
-    author: "@夜猫子设计师",
+    title: "静谧湖山 · 富士 ACROS 极简黑白",
+    author: "@极简果粉Momo",
     deviceTag: 'MacBook Pro 16"',
-    presetId: "art-oled-midnight",
-    scenario: "scenery_art" as ScenarioType,
+    presetId: "fuji-acros",
+    scenario: "fuji_film" as ScenarioType,
     sampleId: "sample-alpine-glow",
-    likes: 416,
+    likes: 398,
   },
 ];
 
@@ -58,14 +58,14 @@ export function InspirationStrip({ onApplyRemix }: InspirationStripProps) {
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-amber-300" />
           <h2 className="text-sm font-semibold text-white sm:text-base">
-            灵感广场 · 一键做同款
+            灵感广场 · 一键套用富士胶片配方
           </h2>
           <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-0.5 text-[10.5px] text-zinc-300">
-            免费共创社区示例
+            免费纯本地滤镜示例
           </span>
         </div>
         <p className="text-xs text-zinc-400">
-          点击任意方案立刻套用同款风格与安全区参数，再上传你的照片即可出片
+          点击任意方案立刻套用同款富士配方与安全区参数，再上传你的照片即可秒出壁纸
         </p>
       </div>
 
@@ -84,7 +84,12 @@ export function InspirationStrip({ onApplyRemix }: InspirationStripProps) {
                   alt={card.title}
                   className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/15" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/20" />
+                {preset && (
+                  <span className="absolute left-2 top-2 rounded-md border border-white/20 bg-black/65 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold tracking-wider text-amber-200 backdrop-blur-md">
+                    {preset.filmCode}
+                  </span>
+                )}
                 <div className="absolute inset-x-2.5 bottom-2 flex items-center justify-between">
                   <span className="rounded-full border border-white/15 bg-black/50 px-2 py-0.5 text-[9.5px] font-medium text-white backdrop-blur-md">
                     {card.deviceTag}
@@ -96,7 +101,7 @@ export function InspirationStrip({ onApplyRemix }: InspirationStripProps) {
               <div className="px-0.5">
                 <h3 className="text-xs font-semibold text-white">{card.title}</h3>
                 <p className="mt-0.5 text-[11px] text-zinc-400">
-                  {card.author} · {preset?.name}
+                  {card.author} · {preset?.recipeTag}
                 </p>
               </div>
 

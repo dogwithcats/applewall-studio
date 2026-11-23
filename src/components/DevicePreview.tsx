@@ -254,29 +254,41 @@ export function DevicePreview({
         <div
           className={`relative bg-gradient-to-br transition-all duration-300 ${chassis.outer} ${outerFrameClass}`}
         >
-          {/* iPhone 物理侧边按键（左侧操作按钮+音量键，右侧电源键+相机控制键） */}
+          {/* iPhone 物理侧边按键 + 天线断带（左侧操作按钮+音量键，右侧电源键+凹陷相机控制键） */}
           {isPhone && (
             <>
+              {/* 四角钛金属中框天线断带 */}
+              <div className="pointer-events-none absolute left-0 top-[68px] h-[3.5px] w-[3px] bg-black/55" />
+              <div className="pointer-events-none absolute right-0 top-[68px] h-[3.5px] w-[3px] bg-black/55" />
+              <div className="pointer-events-none absolute bottom-[68px] left-0 h-[3.5px] w-[3px] bg-black/55" />
+              <div className="pointer-events-none absolute bottom-[68px] right-0 h-[3.5px] w-[3px] bg-black/55" />
+
+              {/* 操作按钮 / 音量加 / 音量减 */}
               <div
-                className={`pointer-events-none absolute -left-[3px] top-[104px] h-[22px] w-[3px] rounded-l-sm ${chassis.button}`}
+                className={`pointer-events-none absolute -left-[3.5px] top-[104px] h-[22px] w-[3.5px] rounded-l-[3px] shadow-[-1px_0_2px_rgba(0,0,0,0.65)] ${chassis.button}`}
               />
               <div
-                className={`pointer-events-none absolute -left-[3px] top-[146px] h-[44px] w-[3px] rounded-l-sm ${chassis.button}`}
+                className={`pointer-events-none absolute -left-[3.5px] top-[146px] h-[44px] w-[3.5px] rounded-l-[3px] shadow-[-1px_0_2px_rgba(0,0,0,0.65)] ${chassis.button}`}
               />
               <div
-                className={`pointer-events-none absolute -left-[3px] top-[202px] h-[44px] w-[3px] rounded-l-sm ${chassis.button}`}
+                className={`pointer-events-none absolute -left-[3.5px] top-[202px] h-[44px] w-[3.5px] rounded-l-[3px] shadow-[-1px_0_2px_rgba(0,0,0,0.65)] ${chassis.button}`}
               />
+
+              {/* 电源键 + 蓝宝石齐平相机控制键 */}
               <div
-                className={`pointer-events-none absolute -right-[3px] top-[168px] h-[66px] w-[3px] rounded-r-sm ${chassis.button}`}
+                className={`pointer-events-none absolute -right-[3.5px] top-[168px] h-[68px] w-[3.5px] rounded-r-[3px] shadow-[1px_0_2px_rgba(0,0,0,0.65)] ${chassis.button}`}
               />
-              <div
-                className={`pointer-events-none absolute -right-[3px] top-[348px] h-[42px] w-[2.5px] rounded-r-sm opacity-75 ${chassis.button}`}
-              />
+              <div className="pointer-events-none absolute -right-[2px] top-[348px] h-[44px] w-[2.5px] rounded-r-[2px] bg-[#16171d] ring-1 ring-white/25" />
             </>
           )}
 
           {/* 贴合黑边内框 */}
-          <div className={`relative shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)] ${innerBezelClass}`}>
+          <div className={`relative shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] ${innerBezelClass}`}>
+            {/* iPhone 顶部微缝听筒扬声器 */}
+            {isPhone && (
+              <div className="pointer-events-none absolute left-1/2 top-[3.5px] z-30 h-[2.5px] w-[42px] -translate-x-1/2 rounded-full bg-[#15161b] shadow-[inset_0_1px_1px_rgba(0,0,0,0.9),0_0.5px_0_rgba(255,255,255,0.12)]" />
+            )}
+
             {/* 实际屏幕视口 */}
             <div
               ref={screenRef}
@@ -319,29 +331,34 @@ export function DevicePreview({
                   </div>
 
                   {/* 原图 / 美化后悬浮微标 */}
-                  <span className="pointer-events-none absolute bottom-16 left-3 z-30 rounded-full border border-white/15 bg-black/55 px-2.5 py-0.5 text-[10px] font-medium text-white/90 backdrop-blur-md">
+                  <span className="pointer-events-none absolute bottom-20 left-3 z-30 rounded-full border border-white/15 bg-black/55 px-2.5 py-0.5 text-[10px] font-medium text-white/90 backdrop-blur-md">
                     原图
                   </span>
-                  <span className="pointer-events-none absolute bottom-16 right-3 z-30 rounded-full border border-blue-400/30 bg-blue-500/35 px-2.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-md">
-                    美化后
+                  <span className="pointer-events-none absolute bottom-20 right-3 z-30 rounded-full border border-blue-400/30 bg-blue-500/35 px-2.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-md">
+                    滤镜后
                   </span>
                 </>
               )}
 
               {/* 超瓷晶玻璃微弱高光质感 */}
-              <div className="pointer-events-none absolute inset-0 z-20 rounded-[inherit] bg-[linear-gradient(135deg,rgba(255,255,255,0.06)_0%,transparent_28%,transparent_72%,rgba(255,255,255,0.025)_100%)]" />
+              <div className="pointer-events-none absolute inset-0 z-20 rounded-[inherit] bg-[linear-gradient(132deg,rgba(255,255,255,0.075)_0%,transparent_26%,transparent_76%,rgba(255,255,255,0.03)_100%)]" />
 
               {/* ==================== iPhone 系统 UI 覆盖 ==================== */}
               {isPhone && (
                 <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-between">
                   {/* 状态栏 + 真实光学镜头灵动岛 / 经典刘海 */}
                   <div className="relative flex items-center justify-between px-6 pt-3 text-[11px] font-semibold tracking-tight text-white">
-                    <span className="tabular-nums drop-shadow-[0_1px_3px_rgba(0,0,0,0.45)]">09:41</span>
+                    <span className="tabular-nums drop-shadow-[0_1px_3px_rgba(0,0,0,0.45)]">
+                      {!renderOptions.homeScreenBlur ? "中国移动" : "09:41"}
+                    </span>
                     {device.hasDynamicIsland && (
-                      <div className="absolute left-1/2 top-2.5 flex h-[23px] w-[88px] -translate-x-1/2 items-center justify-end rounded-full bg-black pr-2.5 shadow-[0_1px_4px_rgba(0,0,0,0.7)] ring-1 ring-white/[0.08]">
-                        {/* 前置镜头光学蓝紫反光微点 */}
-                        <div className="h-[9px] w-[9px] rounded-full bg-[#090d1a] ring-1 ring-white/10">
-                          <div className="ml-[2px] mt-[2px] h-[3px] w-[3px] rounded-full bg-indigo-400/55 blur-[0.4px]" />
+                      <div className="absolute left-1/2 top-2.5 flex h-[24px] w-[92px] -translate-x-1/2 items-center justify-between rounded-full bg-[#030305] px-2.5 shadow-[0_1px_4px_rgba(0,0,0,0.85),inset_0_0_0_0.5px_rgba(255,255,255,0.09)]">
+                        {/* Face ID 红外泛光感应微点 */}
+                        <div className="h-[5px] w-[5px] rounded-full bg-[#120d16] ring-1 ring-white/[0.04]" />
+                        {/* 前置蓝宝石光学镜头与蓝紫镀膜反光 */}
+                        <div className="relative flex h-[11px] w-[11px] items-center justify-center rounded-full bg-[#060914] ring-1 ring-white/15">
+                          <div className="h-[6px] w-[6px] rounded-full bg-gradient-to-br from-indigo-400/50 via-sky-900/80 to-black" />
+                          <div className="absolute left-[2.5px] top-[2px] h-[2px] w-[2px] rounded-full bg-cyan-200/80" />
                         </div>
                       </div>
                     )}
@@ -351,25 +368,47 @@ export function DevicePreview({
                         <div className="h-[7px] w-[7px] rounded-full bg-[#0b1020] ring-1 ring-white/10" />
                       </div>
                     )}
-                    <div className="flex items-center gap-1.5 drop-shadow-[0_1px_3px_rgba(0,0,0,0.45)]">
+                    <div className="relative flex items-center gap-1.5 drop-shadow-[0_1px_3px_rgba(0,0,0,0.45)]">
                       <StatusSignalBars />
                       <Wifi className="h-3 w-3 stroke-[2.2]" />
                       <StatusBattery />
+                      {/* iOS 锁屏右上角控制中心提示短线 */}
+                      {!renderOptions.homeScreenBlur && (
+                        <div className="absolute -bottom-[6px] left-1/2 h-[2px] w-7 -translate-x-1/2 rounded-full bg-white/45" />
+                      )}
                     </div>
                   </div>
 
                   {/* 锁屏模式 vs 精致主屏图标模式 */}
                   {!renderOptions.homeScreenBlur ? (
                     <>
-                      <div className="mt-5 flex flex-col items-center text-center">
-                        <span
-                          className="text-[12.5px] font-medium tracking-[0.02em] drop-shadow-[0_1px_8px_rgba(0,0,0,0.4)]"
-                          style={{ color: clockColor, opacity: 0.9 }}
+                      <div className="mt-4 flex flex-col items-center text-center">
+                        {/* Face ID 小锁图标 */}
+                        <svg
+                          width="11"
+                          height="13"
+                          viewBox="0 0 12 14"
+                          fill="none"
+                          className="mb-1.5 opacity-90 drop-shadow-[0_1px_4px_rgba(0,0,0,0.45)]"
+                          style={{ color: clockColor }}
                         >
-                          11月22日 星期日
+                          <path
+                            d="M3.2 6V4.4C3.2 2.85 4.45 1.6 6 1.6C7.55 1.6 8.8 2.85 8.8 4.4V6"
+                            stroke="currentColor"
+                            strokeWidth="1.45"
+                            strokeLinecap="round"
+                          />
+                          <rect x="2" y="5.8" width="8" height="6.4" rx="1.8" fill="currentColor" />
+                        </svg>
+
+                        <span
+                          className="text-[12.5px] font-medium tracking-[0.02em] drop-shadow-[0_1px_8px_rgba(0,0,0,0.45)]"
+                          style={{ color: clockColor, opacity: 0.92 }}
+                        >
+                          11月22日 星期日 · 十月十三
                         </span>
                         <span
-                          className={`mt-0.5 tabular-nums text-[66px] leading-[0.98] drop-shadow-[0_6px_22px_rgba(0,0,0,0.32)] transition-all ${CLOCK_FONT_CLASS[clockFont]}`}
+                          className={`mt-0.5 tabular-nums text-[68px] leading-[0.96] drop-shadow-[0_6px_22px_rgba(0,0,0,0.34)] transition-all ${CLOCK_FONT_CLASS[clockFont]}`}
                           style={{
                             color: clockColor,
                             opacity: depthHint ? 0.88 : 0.96,
@@ -378,7 +417,7 @@ export function DevicePreview({
                           09:41
                         </span>
 
-                        {/* 苹果原生单色玻璃锁屏小组件（无 Emoji 违和感） */}
+                        {/* 苹果原生单色玻璃锁屏小组件 */}
                         <div className="mt-3 flex items-center gap-2.5">
                           {/* 圆形天气组件 */}
                           <div className="flex h-10 w-10 flex-col items-center justify-center rounded-full border border-white/20 bg-white/[0.12] text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.28)] backdrop-blur-xl">
@@ -419,23 +458,23 @@ export function DevicePreview({
                             <CloudSun className="h-3.5 w-3.5 opacity-90" />
                             <div className="leading-tight">
                               <div className="text-[9.5px] font-semibold">晴朗微风</div>
-                              <div className="text-[8px] opacity-75">空气优 · 适合出行</div>
+                              <div className="text-[8px] opacity-75">空气优 · 适合扫街</div>
                             </div>
                           </div>
                         </div>
                       </div>
 
                       {/* 底部手电筒 & 相机精致毛玻璃按钮 */}
-                      <div className="mt-auto px-7 pb-5">
+                      <div className="mt-auto px-7 pb-3.5">
                         <div className="mb-4 flex items-center justify-between">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.22),0_6px_16px_rgba(0,0,0,0.35)] backdrop-blur-2xl">
-                            <Flashlight className="h-4 w-4 stroke-[1.8]" />
+                          <div className="flex h-[42px] w-[42px] items-center justify-center rounded-full border border-white/25 bg-black/32 text-white shadow-[inset_0_1px_1.5px_rgba(255,255,255,0.3),0_8px_18px_rgba(0,0,0,0.38)] backdrop-blur-2xl">
+                            <Flashlight className="h-[17px] w-[17px] stroke-[1.8]" />
                           </div>
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.22),0_6px_16px_rgba(0,0,0,0.35)] backdrop-blur-2xl">
-                            <Camera className="h-4 w-4 stroke-[1.8]" />
+                          <div className="flex h-[42px] w-[42px] items-center justify-center rounded-full border border-white/25 bg-black/32 text-white shadow-[inset_0_1px_1.5px_rgba(255,255,255,0.3),0_8px_18px_rgba(0,0,0,0.38)] backdrop-blur-2xl">
+                            <Camera className="h-[17px] w-[17px] stroke-[1.8]" />
                           </div>
                         </div>
-                        <div className="mx-auto h-[4px] w-28 rounded-full bg-white/85 shadow-sm" />
+                        <div className="mx-auto h-[4.5px] w-[114px] rounded-full bg-white/88 shadow-sm" />
                       </div>
                     </>
                   ) : (

@@ -14,13 +14,13 @@ import {
   MessageSquareHeart,
   RotateCw,
   Image as ImageIcon,
-  Wand2,
   Share2,
   CheckCircle2,
-  KeyRound,
-  Cpu,
+  Film,
+  Shuffle,
   ChevronDown,
   ChevronUp,
+  RotateCcw,
   SplitSquareHorizontal,
 } from "lucide-react";
 import {
@@ -29,16 +29,22 @@ import {
   IPHONE_TIER_LIST,
   findIPhoneDevice,
   getDeviceById,
-  getEffectiveDimensions,
   type DeviceFamily,
   type IPhoneSeries,
   type IPhoneTier,
 } from "@/lib/devices";
-import { STYLE_PRESETS, getPresetById, type ScenarioType } from "@/lib/presets";
+import {
+  FILTER_CATEGORIES,
+  STYLE_PRESETS,
+  getPresetById,
+  type ScenarioType,
+} from "@/lib/presets";
+import { DEFAULT_FINE_TUNE, type FilmFineTune } from "@/lib/film-lut";
 import { SAMPLE_PHOTOS, getSampleImageUrl } from "@/lib/samples";
 import {
   exportDeviceWallpaper,
   exportShowcasePoster,
+  renderFilterThumbnails,
   type WallpaperRenderOptions,
 } from "@/lib/canvas-engine";
 import {
@@ -49,7 +55,6 @@ import {
 import { SuitePreview } from "./SuitePreview";
 import { FeedbackModal } from "./FeedbackModal";
 import { InspirationStrip } from "./InspirationStrip";
-import type { AIProviderName, GenerateWallpaperResponse } from "@/lib/ai/providers";
 
 const CLOCK_COLORS = [
   { label: "纯白", value: "#ffffff" },
@@ -69,17 +74,18 @@ const CHASSIS_FINISHES: { id: ChassisFinish; label: string; color: string }[] = 
 export function StudioApp() {
   // === 1. 图片素材状态 ===
   const [sourceDataUrl, setSourceDataUrl] = useState<string>("");
-  const [activeImageUrl, setActiveImageUrl] = useState<string>("");
   const [loadedImage, setLoadedImage] = useState<HTMLImageElement | null>(null);
+  const [filterThumbs, setFilterThumbs] = useState<Record<string, string>>({});
   const [activeSampleId, setActiveSampleId] = useState<string>(SAMPLE_PHOTOS[0].id);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // === 2. 双核心场景 & 美化预设 ===
-  const [scenario, setScenario] = useState<ScenarioType>("portrait_pet");
-  const [presetId, setPresetId] = useState<string>("portrait-studio-light");
-  const [strength, setStrength] = useState<number>(0.42);
-  const [customPrompt, setCustomPrompt] = useState<string>("");
+  // === 2. 内置富士胶片 & 壁纸滤镜状态 ===
+  const [scenario, setScenario] = useState<ScenarioType>("fuji_film");
+  const [presetId, setPresetId] = useState<string>("fuji-classic-neg");
+  const [strength, setStrength] = useState<number>(0.86);
+  const [fineTune, setFineTune] = useState<FilmFineTune>(DEFAULT_FINE_TUNE);
+  const [showFineTune, setShowFineTune] = useState<boolean>(false);
 
   // === 3. 苹果设备与视图模式 ===
   const [viewMode, setViewMode] = useState<"single" | "suite">("single");
@@ -92,7 +98,7 @@ export function StudioApp() {
   const [zoom, setZoom] = useState<number>(1.04);
   const [offsetX, setOffsetX] = useState<number>(0);
   const [offsetY, setOffsetY] = useState<number>(0);
-  const [topBreathingRoom, setTopBreathingRoom] = useState<number>(0.12);
+  const [topBreathingRoom, setTopBreathingRoom] = useState<number>(0.14);
   const [clockScrim, setClockScrim] = useState<number>(0.18);
   const [homeScreenBlur, setHomeScreenBlur] = useState<boolean>(false);
   const [showSafeZones, setShowSafeZones] = useState<boolean>(false);
@@ -101,20 +107,7 @@ export function StudioApp() {
   const [clockFont, setClockFont] = useState<ClockFontStyle>("sf-bold");
   const [clockColor, setClockColor] = useState<string>("#ffffff");
 
-  // === 5. AI 生成状态 & BYOK 可选配置 ===
-  const [generating, setGenerating] = useState<boolean>(false);
-  const [aiMeta, setAiMeta] = useState<{
-    provider: string;
-    isCloudConfigured: boolean;
-    remainingToday: number;
-    dailyLimit: number;
-  } | null>(null);
-  const [lastResult, setLastResult] = useState<GenerateWallpaperResponse | null>(null);
-  const [showByok, setShowByok] = useState<boolean>(false);
-  const [customProvider, setCustomProvider] = useState<AIProviderName>("volcengine");
-  const [customApiKey, setCustomApiKey] = useState<string>("");
-
-  // === 6. 反馈弹窗与 Toast 提示 ===
+  // === 5. 反馈弹窗与 Toast 提示 ===
   const [feedbackOpen, setFeedbackOpen] = useState<boolean>(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -129,33 +122,63 @@ export function StudioApp() {
     [deviceFamily]
   );
 
+  const hasCustomFineTune = useMemo(
+    () =>
+      fineTune.warmth !== 0 ||
+      fineTune.exposure !== 0 ||
+      fineTune.grainOverride !== undefined ||
+      fineTune.bloomOverride !== undefined ||
+      fineTune.vignetteOverride !== undefined,
+    [fineTune]
+  );
+
+  const effectiveGrainDisplay =
+    fineTune.grainOverride !== undefined
+      ? fineTune.grainOverride
+      : (preset.localRecipe.grain ?? 0) * strength;
+  const effectiveBloomDisplay =
+    fineTune.bloomOverride !== undefined
+      ? fineTune.bloomOverride
+      : (preset.localRecipe.bloom ?? 0) * strength;
+  const effectiveVignetteDisplay =
+    fineTune.vignetteOverride !== undefined
+      ? fineTune.vignetteOverride
+      : (preset.localRecipe.vignette ?? 0) * strength;
+
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     setTimeout(() => {
       setToast((prev) => (prev === msg ? null : prev));
-    }, 3600);
+    }, 3400);
   }, []);
 
-  // 初始化默认演示照片 + 查询后端 AI 引擎状态
+  // 初始化默认演示照片
   useEffect(() => {
     const sampleUrl = getSampleImageUrl(SAMPLE_PHOTOS[0].id);
     setSourceDataUrl(sampleUrl);
-    setActiveImageUrl(sampleUrl);
-
-    fetch("/api/generate")
-      .then((r) => r.json())
-      .then((d) => setAiMeta(d))
-      .catch(() => {});
   }, []);
 
-  // 加载当前激活图像为 HTMLImageElement 供 Canvas 渲染
+  // 加载当前图像为 HTMLImageElement 并即时生成全部 22 款滤镜的实时缩略图
   useEffect(() => {
-    if (!activeImageUrl) return;
+    if (!sourceDataUrl) return;
+    let cancelled = false;
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.onload = () => setLoadedImage(img);
-    img.src = activeImageUrl;
-  }, [activeImageUrl]);
+    img.onload = () => {
+      if (cancelled) return;
+      setLoadedImage(img);
+      try {
+        const thumbs = renderFilterThumbnails(img, STYLE_PRESETS);
+        if (!cancelled) setFilterThumbs(thumbs);
+      } catch {
+        // 忽略极端跨域情况下的缩略图生成失败
+      }
+    };
+    img.src = sourceDataUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceDataUrl]);
 
   function handleSwitchFamily(family: DeviceFamily) {
     setDeviceFamily(family);
@@ -170,12 +193,22 @@ export function StudioApp() {
 
   function handleSelectPreset(id: string) {
     const p = getPresetById(id);
-    setPresetId(id);
+    setPresetId(p.id);
+    setScenario(p.scenario);
     setStrength(p.defaultStrength);
+    setFineTune(DEFAULT_FINE_TUNE);
     if (deviceFamily === "iphone" && p.localRecipe.recommendedTopBreathing !== undefined) {
       setTopBreathingRoom(p.localRecipe.recommendedTopBreathing);
     }
     setCompareMode(false);
+  }
+
+  function handleRandomPreset() {
+    const candidates = STYLE_PRESETS.filter((p) => p.id !== presetId);
+    const picked = candidates[Math.floor(Math.random() * candidates.length)];
+    if (!picked) return;
+    handleSelectPreset(picked.id);
+    showToast(`已切换至「${picked.name}」(${picked.filmCode})`);
   }
 
   function handleSelectSample(sampleId: string) {
@@ -183,8 +216,6 @@ export function StudioApp() {
     const url = getSampleImageUrl(sampleId);
     setActiveSampleId(sampleId);
     setSourceDataUrl(url);
-    setActiveImageUrl(url);
-    setLastResult(null);
     setZoom(1.04);
     setOffsetX(0);
     setOffsetY(0);
@@ -205,66 +236,19 @@ export function StudioApp() {
       const dataUrl = String(reader.result || "");
       setActiveSampleId("");
       setSourceDataUrl(dataUrl);
-      setActiveImageUrl(dataUrl);
-      setLastResult(null);
       setZoom(1.02);
       setOffsetX(0);
       setOffsetY(0);
-      showToast("照片已加载！可在真机屏幕内直接拖动调整构图");
+      showToast("照片已加载！所有富士滤镜已实时生成预览缩略图");
     };
     reader.readAsDataURL(file);
-  }
-
-  async function handleGenerateAI() {
-    if (!sourceDataUrl) {
-      showToast("请先上传一张照片");
-      return;
-    }
-    setGenerating(true);
-    setCompareMode(false);
-    try {
-      const dims = getEffectiveDimensions(device, ipadLandscape);
-      const resp = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageDataUrl: sourceDataUrl,
-          presetId,
-          scenario,
-          deviceId,
-          deviceWidth: dims.width,
-          deviceHeight: dims.height,
-          strength,
-          customPrompt,
-          topBreathingRoom,
-          customProvider: customApiKey.trim() ? customProvider : undefined,
-          customApiKey: customApiKey.trim() || undefined,
-        }),
-      });
-      const data = (await resp.json()) as GenerateWallpaperResponse;
-      if (!resp.ok || !data.ok) {
-        showToast(data.error || "生成失败，请检查网络或稍后再试");
-        return;
-      }
-
-      setLastResult(data);
-      if (data.resultImageUrl) {
-        setActiveImageUrl(data.resultImageUrl);
-      } else {
-        setActiveImageUrl(sourceDataUrl);
-      }
-      showToast(`✨ ${data.providerLabel} 处理完成（${data.durationMs}ms）`);
-    } catch {
-      showToast("请求失败，已保持本地实时渲染模式");
-    } finally {
-      setGenerating(false);
-    }
   }
 
   const renderOptions: WallpaperRenderOptions = useMemo(
     () => ({
       preset,
       strength,
+      fineTune,
       zoom,
       offsetX,
       offsetY,
@@ -276,6 +260,7 @@ export function StudioApp() {
     [
       preset,
       strength,
+      fineTune,
       zoom,
       offsetX,
       offsetY,
@@ -311,9 +296,8 @@ export function StudioApp() {
       const url = getSampleImageUrl(sampleId);
       setActiveSampleId(sampleId);
       setSourceDataUrl(url);
-      setActiveImageUrl(url);
     }
-    showToast("已一键套用同款风格与构图参数，现在可上传你的照片试试！");
+    showToast("已一键套用同款富士配方与构图参数，现在可上传你的照片试试！");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -335,11 +319,11 @@ export function StudioApp() {
                   果壁 Studio
                 </span>
                 <span className="rounded-full border border-emerald-400/25 bg-emerald-500/12 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
-                  完全免费 · 共创测试版
+                  免费纯本地 · 零水印
                 </span>
               </div>
               <p className="hidden text-[11px] text-zinc-400 sm:block">
-                专为 iPhone / iPad / Mac 打造的 AI 壁纸美化与三端适配工作台
+                专为 iPhone / iPad / Mac 打造的富士胶片滤镜与三端壁纸工作台
               </p>
             </div>
           </div>
@@ -372,12 +356,8 @@ export function StudioApp() {
 
           <div className="flex items-center gap-2">
             <div className="hidden items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[11px] text-zinc-300 lg:flex">
-              <Cpu className="h-3.5 w-3.5 text-blue-400" />
-              <span>
-                {aiMeta?.isCloudConfigured
-                  ? `云端 AI (${aiMeta.provider}) · 今日剩余 ${aiMeta.remainingToday} 次`
-                  : "本地即时引擎就绪（无限免费）"}
-              </span>
+              <Film className="h-3.5 w-3.5 text-amber-300" />
+              <span>内置 {STYLE_PRESETS.length} 款胶片滤镜 · 纯本地毫秒级渲染</span>
             </div>
 
             <button
@@ -395,7 +375,7 @@ export function StudioApp() {
       {/* ==================== 主三栏工作台 ==================== */}
       <main className="mx-auto max-w-[1460px] px-4 py-5 sm:px-6">
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-          {/* ---------- 左侧栏：上传照片 + 双场景美化控制 ---------- */}
+          {/* ---------- 左侧栏：上传照片 + 内置富士胶片与壁纸滤镜 ---------- */}
           <aside className="space-y-4 lg:col-span-3">
             {/* 1. 照片上传区 */}
             <div className="glass-panel rounded-[26px] p-4">
@@ -404,7 +384,7 @@ export function StudioApp() {
                   <ImageIcon className="h-4 w-4 text-blue-400" />
                   1. 上传你的照片
                 </h2>
-                <span className="text-[11px] text-zinc-500">本地直传护隐私</span>
+                <span className="text-[11px] text-zinc-500">本地直出护隐私</span>
               </div>
 
               <div
@@ -419,17 +399,19 @@ export function StudioApp() {
                   handleFileUpload(e.dataTransfer.files?.[0]);
                 }}
                 onClick={() => fileInputRef.current?.click()}
-                className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-4 py-4 text-center transition ${
+                className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-4 py-3.5 text-center transition ${
                   isDragging
                     ? "border-blue-400 bg-blue-500/15"
                     : "border-white/15 bg-black/25 hover:border-white/30 hover:bg-white/[0.04]"
                 }`}
               >
-                <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.06]">
+                <div className="mb-1.5 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.06]">
                   <Upload className="h-4 w-4 text-zinc-200" />
                 </div>
                 <p className="text-xs font-medium text-zinc-200">点击或拖拽照片到这里</p>
-                <p className="mt-0.5 text-[10.5px] text-zinc-500">支持人像 / 萌宠 / 风景原图</p>
+                <p className="mt-0.5 text-[10.5px] text-zinc-500">
+                  支持人像 / 萌宠 / 风景原图，零上传延迟
+                </p>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -440,7 +422,7 @@ export function StudioApp() {
               </div>
 
               {/* 带真实缩略图的内置高清样图 */}
-              <div className="mt-3.5">
+              <div className="mt-3">
                 <p className="mb-2 text-[11px] text-zinc-400">内置高清样图一键试玩：</p>
                 <div className="grid grid-cols-3 gap-2">
                   {SAMPLE_PHOTOS.map((s) => {
@@ -475,97 +457,156 @@ export function StudioApp() {
               </div>
             </div>
 
-            {/* 2. 双核心场景 + 风格预设 */}
+            {/* 2. 内置富士胶片 & 壁纸滤镜库 */}
             <div className="glass-panel rounded-[26px] p-4">
-              <h2 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold text-white">
-                <Sparkles className="h-4 w-4 text-amber-300" />
-                2. 场景与 AI 美化风格
-              </h2>
-
-              <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl border border-white/[0.08] bg-black/45 p-1">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="flex items-center gap-1.5 text-[13px] font-semibold text-white">
+                  <Film className="h-4 w-4 text-amber-300" />
+                  2. 内置胶片与壁纸滤镜
+                </h2>
                 <button
                   type="button"
-                  onClick={() => {
-                    setScenario("portrait_pet");
-                    const first = STYLE_PRESETS.find((p) => p.scenario === "portrait_pet");
-                    if (first) handleSelectPreset(first.id);
-                  }}
-                  className={`rounded-lg py-1.5 text-xs font-medium transition ${
-                    scenario === "portrait_pet"
-                      ? "bg-white text-black shadow"
-                      : "text-zinc-400 hover:text-white"
-                  }`}
+                  onClick={handleRandomPreset}
+                  className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10.5px] font-medium text-zinc-300 transition hover:border-white/25 hover:bg-white/[0.1] hover:text-white"
                 >
-                  真人 / 宠物保真
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setScenario("scenery_art");
-                    const first = STYLE_PRESETS.find((p) => p.scenario === "scenery_art");
-                    if (first) handleSelectPreset(first.id);
-                  }}
-                  className={`rounded-lg py-1.5 text-xs font-medium transition ${
-                    scenario === "scenery_art"
-                      ? "bg-white text-black shadow"
-                      : "text-zinc-400 hover:text-white"
-                  }`}
-                >
-                  风景 / 艺术二创
+                  <Shuffle className="h-3 w-3 text-amber-300" />
+                  随机
                 </button>
               </div>
 
-              <div className="space-y-1.5">
-                {filteredPresets.map((item) => {
-                  const selected = item.id === presetId;
+              {/* 三大滤镜分类分段切换 */}
+              <div className="mb-3 grid grid-cols-3 gap-1 rounded-xl border border-white/[0.08] bg-black/45 p-1">
+                {FILTER_CATEGORIES.map((cat) => {
+                  const count = STYLE_PRESETS.filter((p) => p.scenario === cat.id).length;
+                  const active = scenario === cat.id;
                   return (
                     <button
-                      key={item.id}
+                      key={cat.id}
                       type="button"
-                      onClick={() => handleSelectPreset(item.id)}
-                      className={`w-full rounded-2xl border p-2.5 text-left transition ${
-                        selected
-                          ? "border-blue-400/60 bg-blue-500/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
-                          : "border-white/[0.06] bg-white/[0.015] hover:border-white/15 hover:bg-white/[0.04]"
+                      onClick={() => {
+                        setScenario(cat.id);
+                      }}
+                      className={`flex items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] font-medium transition ${
+                        active
+                          ? "bg-white text-black shadow"
+                          : "text-zinc-400 hover:text-white"
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="h-3.5 w-3.5 rounded-full ring-1 ring-white/30"
-                            style={{
-                              background: `linear-gradient(135deg, ${item.swatch[0]}, ${item.swatch[1]})`,
-                            }}
-                          />
-                          <span className="text-xs font-semibold text-white">{item.name}</span>
-                        </div>
-                        {item.badge && (
-                          <span className="rounded-full bg-white/[0.08] px-2 py-0.5 text-[9.5px] text-zinc-300">
-                            {item.badge}
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-1 text-[10.5px] leading-snug text-zinc-400">
-                        {item.subtitle}
-                      </p>
+                      <span>{cat.shortLabel}</span>
+                      <span
+                        className={`text-[9.5px] tabular-nums ${
+                          active ? "text-zinc-600" : "text-zinc-500"
+                        }`}
+                      >
+                        {count}
+                      </span>
                     </button>
                   );
                 })}
               </div>
 
-              {/* 风格强度 & 补充描述 */}
-              <div className="mt-4 space-y-3 border-t border-white/[0.08] pt-3.5">
+              {/* 2 列实时缩略图滤镜网格 */}
+              <div className="grid max-h-[348px] grid-cols-2 gap-2 overflow-y-auto pr-0.5">
+                {filteredPresets.map((item) => {
+                  const selected = item.id === presetId;
+                  const thumb = filterThumbs[item.id];
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleSelectPreset(item.id)}
+                      className={`group flex flex-col overflow-hidden rounded-2xl border text-left transition ${
+                        selected
+                          ? "border-blue-400/80 bg-blue-500/[0.14] ring-1 ring-blue-400/50"
+                          : "border-white/[0.08] bg-white/[0.02] hover:border-white/25 hover:bg-white/[0.05]"
+                      }`}
+                    >
+                      {/* 实时照片滤镜预览图 */}
+                      <div
+                        className="relative aspect-[16/10] w-full overflow-hidden bg-zinc-900"
+                        style={
+                          !thumb
+                            ? {
+                                background: `linear-gradient(135deg, ${item.swatch[0]}, ${item.swatch[1]})`,
+                              }
+                            : undefined
+                        }
+                      >
+                        {thumb && (
+                          <img
+                            src={thumb}
+                            alt={item.name}
+                            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                          />
+                        )}
+                        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/20" />
+
+                        {/* 左上胶片代号徽章（富士风格） */}
+                        <span
+                          className={`absolute left-1.5 top-1.5 rounded-md border px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider backdrop-blur-md ${
+                            selected
+                              ? "border-blue-300/60 bg-blue-500/80 text-white"
+                              : "border-white/20 bg-black/60 text-amber-200"
+                          }`}
+                        >
+                          {item.filmCode}
+                        </span>
+
+                        {item.badge && (
+                          <span className="absolute right-1.5 top-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[8.5px] font-medium text-zinc-100 backdrop-blur-md">
+                            {item.badge}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* 滤镜名称与配方标签 */}
+                      <div className="px-2 py-1.5">
+                        <div className="truncate text-[11.5px] font-semibold text-white">
+                          {item.shortName}
+                        </div>
+                        <div className="mt-0.5 truncate text-[9.5px] text-zinc-400">
+                          {item.recipeTag}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 当前选中滤镜详情卡 */}
+              <div className="mt-3 rounded-2xl border border-white/[0.07] bg-black/35 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-white/30"
+                      style={{
+                        background: `linear-gradient(135deg, ${preset.swatch[0]}, ${preset.swatch[1]})`,
+                      }}
+                    />
+                    <span className="truncate text-xs font-semibold text-white">
+                      {preset.name}
+                    </span>
+                  </div>
+                  <span className="shrink-0 rounded-md bg-white/[0.08] px-1.5 py-0.5 font-mono text-[9.5px] text-amber-200">
+                    {preset.filmCode}
+                  </span>
+                </div>
+                <p className="mt-1 text-[10.5px] leading-relaxed text-zinc-400">
+                  {preset.subtitle}
+                </p>
+              </div>
+
+              {/* 滤镜强度 + 可展开胶片质感微调 */}
+              <div className="mt-3.5 space-y-3 border-t border-white/[0.08] pt-3.5">
                 <div>
                   <div className="mb-1.5 flex items-center justify-between text-[11px]">
-                    <span className="text-zinc-300">
-                      {scenario === "portrait_pet" ? "美化幅度（越低越保真）" : "艺术重绘强度"}
-                    </span>
+                    <span className="text-zinc-300">滤镜浓度（0% 为原图）</span>
                     <span className="font-mono text-zinc-200">{Math.round(strength * 100)}%</span>
                   </div>
                   <input
                     type="range"
-                    min={0.15}
-                    max={0.95}
+                    min={0}
+                    max={1}
                     step={0.01}
                     value={strength}
                     onChange={(e) => setStrength(Number(e.target.value))}
@@ -573,66 +614,155 @@ export function StudioApp() {
                   />
                 </div>
 
-                <div>
-                  <input
-                    type="text"
-                    value={customPrompt}
-                    onChange={(e) => setCustomPrompt(e.target.value)}
-                    placeholder={
-                      scenario === "portrait_pet"
-                        ? "选填补充：如去除背景路人、柔化暖光"
-                        : "选填补充：如增加星芒、柔和粉蓝晚霞"
-                    }
-                    className="w-full rounded-xl border border-white/[0.09] bg-black/40 px-3 py-2 text-xs text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus:outline-none"
-                  />
-                </div>
-
-                <div className="rounded-xl border border-white/[0.07] bg-black/30 px-3 py-2">
+                {/* 胶片质感微调抽屉 */}
+                <div className="rounded-2xl border border-white/[0.08] bg-black/30 px-3 py-2.5">
                   <button
                     type="button"
-                    onClick={() => setShowByok((v) => !v)}
-                    className="flex w-full items-center justify-between text-[11px] text-zinc-400 hover:text-zinc-200"
+                    onClick={() => setShowFineTune((v) => !v)}
+                    className="flex w-full items-center justify-between text-[11.5px] font-medium text-zinc-200 hover:text-white"
                   >
                     <span className="flex items-center gap-1.5">
-                      <KeyRound className="h-3.5 w-3.5" />
-                      接入国内云端大模型 Key（选填）
+                      <SlidersHorizontal className="h-3.5 w-3.5 text-amber-300" />
+                      胶片质感微调（色温 / 颗粒 / 黑柔）
+                      {hasCustomFineTune && (
+                        <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
+                      )}
                     </span>
-                    {showByok ? (
-                      <ChevronUp className="h-3.5 w-3.5" />
+                    {showFineTune ? (
+                      <ChevronUp className="h-3.5 w-3.5 text-zinc-400" />
                     ) : (
-                      <ChevronDown className="h-3.5 w-3.5" />
+                      <ChevronDown className="h-3.5 w-3.5 text-zinc-400" />
                     )}
                   </button>
-                  {showByok && (
-                    <div className="mt-2.5 space-y-2">
-                      <select
-                        value={customProvider}
-                        onChange={(e) => setCustomProvider(e.target.value as AIProviderName)}
-                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-2.5 py-1.5 text-xs text-white"
-                      >
-                        <option value="volcengine">火山引擎 · 豆包 SeedEdit (国内保真首选)</option>
-                        <option value="siliconflow">硅基流动 · Kolors / FLUX</option>
-                      </select>
-                      <input
-                        type="password"
-                        value={customApiKey}
-                        onChange={(e) => setCustomApiKey(e.target.value)}
-                        placeholder="留空则使用默认免费本地引擎"
-                        className="w-full rounded-lg border border-white/10 bg-zinc-950 px-2.5 py-1.5 text-xs text-white placeholder:text-zinc-500"
-                      />
+
+                  {showFineTune && (
+                    <div className="mt-3 space-y-2.5 border-t border-white/[0.06] pt-2.5">
+                      <div>
+                        <div className="mb-1 flex justify-between text-[10.5px]">
+                          <span className="text-zinc-400">色温偏移 (WB 暖/冷)</span>
+                          <span className="font-mono text-zinc-300">
+                            {fineTune.warmth > 0
+                              ? `暖 +${fineTune.warmth}`
+                              : fineTune.warmth < 0
+                                ? `冷 ${fineTune.warmth}`
+                                : "默认 0"}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={-30}
+                          max={30}
+                          step={1}
+                          value={fineTune.warmth}
+                          onChange={(e) =>
+                            setFineTune((prev) => ({ ...prev, warmth: Number(e.target.value) }))
+                          }
+                          className="w-full"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="mb-1 flex justify-between text-[10.5px]">
+                          <span className="text-zinc-400">曝光补偿 (EV)</span>
+                          <span className="font-mono text-zinc-300">
+                            {fineTune.exposure > 0 ? `+${fineTune.exposure}` : fineTune.exposure}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={-25}
+                          max={25}
+                          step={1}
+                          value={fineTune.exposure}
+                          onChange={(e) =>
+                            setFineTune((prev) => ({ ...prev, exposure: Number(e.target.value) }))
+                          }
+                          className="w-full"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="mb-1 flex justify-between text-[10.5px]">
+                          <span className="text-zinc-400">银盐颗粒</span>
+                          <span className="font-mono text-zinc-300">
+                            {Math.round(effectiveGrainDisplay * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={0.65}
+                          step={0.01}
+                          value={Math.min(0.65, effectiveGrainDisplay)}
+                          onChange={(e) =>
+                            setFineTune((prev) => ({
+                              ...prev,
+                              grainOverride: Number(e.target.value),
+                            }))
+                          }
+                          className="w-full"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="mb-1 flex justify-between text-[10.5px]">
+                          <span className="text-zinc-400">黑柔光晕 (Pro-Mist)</span>
+                          <span className="font-mono text-zinc-300">
+                            {Math.round(effectiveBloomDisplay * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={0.85}
+                          step={0.01}
+                          value={Math.min(0.85, effectiveBloomDisplay)}
+                          onChange={(e) =>
+                            setFineTune((prev) => ({
+                              ...prev,
+                              bloomOverride: Number(e.target.value),
+                            }))
+                          }
+                          className="w-full"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="mb-1 flex justify-between text-[10.5px]">
+                          <span className="text-zinc-400">暗角氛围</span>
+                          <span className="font-mono text-zinc-300">
+                            {Math.round(effectiveVignetteDisplay * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={0.75}
+                          step={0.01}
+                          value={Math.min(0.75, effectiveVignetteDisplay)}
+                          onChange={(e) =>
+                            setFineTune((prev) => ({
+                              ...prev,
+                              vignetteOverride: Number(e.target.value),
+                            }))
+                          }
+                          className="w-full"
+                        />
+                      </div>
+
+                      {hasCustomFineTune && (
+                        <button
+                          type="button"
+                          onClick={() => setFineTune(DEFAULT_FINE_TUNE)}
+                          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] py-1.5 text-[11px] text-zinc-300 transition hover:bg-white/[0.1] hover:text-white"
+                        >
+                          <RotateCcw className="h-3 w-3" />
+                          恢复当前胶片默认配方
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
-
-                <button
-                  type="button"
-                  onClick={handleGenerateAI}
-                  disabled={generating || !sourceDataUrl}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 via-blue-500 to-indigo-500 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(59,130,246,0.32)] transition hover:brightness-110 disabled:opacity-50"
-                >
-                  <Wand2 className={`h-4 w-4 ${generating ? "animate-spin" : ""}`} />
-                  {generating ? "AI 正在美化与适配..." : "一键 AI 美化适配"}
-                </button>
               </div>
             </div>
           </aside>
@@ -850,15 +980,6 @@ export function StudioApp() {
                 </div>
               </div>
             )}
-
-            {lastResult && (
-              <div className="relative z-20 mt-3 rounded-2xl border border-white/[0.08] bg-black/45 px-3.5 py-2.5 text-[11px] text-zinc-400 backdrop-blur">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-zinc-200">{lastResult.tips}</span>
-                  <span className="shrink-0 text-emerald-300">✓ {lastResult.providerLabel}</span>
-                </div>
-              </div>
-            )}
           </section>
 
           {/* ---------- 右侧栏：苹果专属构图微调 + 无损导出 ---------- */}
@@ -875,7 +996,7 @@ export function StudioApp() {
                     setZoom(1.04);
                     setOffsetX(0);
                     setOffsetY(0);
-                    setTopBreathingRoom(deviceFamily === "mac" ? 0.04 : 0.12);
+                    setTopBreathingRoom(deviceFamily === "mac" ? 0.04 : 0.14);
                     setClockScrim(0.18);
                   }}
                   className="text-[11px] text-zinc-400 transition hover:text-white"
@@ -1078,7 +1199,7 @@ export function StudioApp() {
               </div>
 
               <p className="mt-3 text-center text-[11px] leading-relaxed text-zinc-500">
-                完全免费、不加水印。点右上角「提建议」即可许愿新风格或新功能。
+                完全免费、纯本地处理不上传云端。点右上角「提建议」即可许愿新富士配方。
               </p>
             </div>
           </aside>
